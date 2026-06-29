@@ -1,0 +1,24 @@
+# Recordings stay local — never commit raw data
+data/*
+!data/README.md
+# ...but the small prebuilt feature matrix IS committed, so a box can run the
+# search without the raw recordings:
+!data/featurematrix.npz
+
+# Weco run logs (created by --save-logs)
+.runs/
+
+# Per-model results (confusion matrix + metrics), written by evaluate.py
+results/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# OS / editor / local agent tooling (not part of the project)
+.DS_Store
+.agents/
+skills-lock.json

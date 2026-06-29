@@ -1,0 +1,32 @@
+[project]
+name = "realtime-sleep-staging"
+version = "0.1.0"
+description = "Weco-optimized real-time REM detection (Walch et al. 2019 wearable data)"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.21",
+    "scikit-learn>=1.5",  # needs FixedThresholdClassifier
+    "pandas>=2.0",        # fast parsing of the raw recordings
+    "matplotlib>=3.5",    # saves the per-model results figure in evaluate.py
+    # Model libraries Weco may explore (kept in the base env so `uv run` always
+    # sees them, no extra flags needed in the eval command):
+    "torch>=2.0,<2.10",   # 2.10+ wheels need macOS 14+ on Apple Silicon
+    "xgboost>=2.0",       # gradient boosting
+    "lightgbm>=4.0",      # gradient boosting
+    "tensorflow>=2.16",   # deep learning (Keras backend)
+    "keras>=3.0",         # high-level model API
+    # Validated feature extractors (features rest on trusted code, not hand-rolled):
+    "agcounts>=0.1",      # ActiGraph activity counts (Neishabouri 2022, cited by the paper)
+    "pycatch22>=0.4",     # catch22 canonical time-series features
+    "tsfel>=0.1",         # general time-series feature extraction library
+]
+
+# Optional extras:
+#   uv sync --extra notebook  # to run demo.ipynb
+#   uv sync --extra test      # to run the test suite
+[project.optional-dependencies]
+notebook = ["ipykernel>=6", "nbconvert>=7"]
+test = ["pytest>=8"]
+
+[tool.uv]
+package = false
