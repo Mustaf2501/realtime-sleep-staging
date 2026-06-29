@@ -1,7 +1,7 @@
-"""Guarantee the dataset's epochs are in chronological order.
+"""Tests that the dataset's epochs are in chronological order.
 
-Sequence models and the causality guard assume each night runs earliest -> latest.
-We never re-sort, so this checks the loaded data actually holds that order.
+Sequence models and the causality guard assume each night runs earliest to latest.
+The loader never re-sorts, so these check the data actually holds that order.
 
     uv run --extra test python -m pytest tests/test_dataset.py -v
 """

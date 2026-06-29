@@ -1,31 +1,22 @@
-"""Score the model in module.py with leave-one-subject-out CV.
+"""Leave-one-subject-out scoring for the model in module.py.
 
-Prints a primary line `metric: <value>` that Weco maximizes — the mean per-subject
-REM-detection F1: F1 is computed on each held-out subject (one per LOSO fold) and
-then averaged, matching the paper's per-fold scoring (mean ± SEM).
+Prints `metric: <value>` for Weco to maximize: the mean per-subject REM F1 (F1 on
+each held-out subject, averaged across folds). Run directly for the full breakdown.
 
-Run directly for the full breakdown:
-    uv run python evaluate.py
+Scoring follows the paper's Figure 1. Accuracy, precision, recall, and F1 are
+computed per held-out subject and averaged across folds (mean ± SEM); a subject
+with no scored REM is skipped, since REM precision and recall are undefined there.
+The confusion matrix is pooled over all epochs and row-normalized (the paper
+row-normalizes the matrix but averages the metrics across folds), so its
+[REM, REM] cell is close to, but not exactly, the averaged recall.
 
-Scoring follows the paper's Figure 1:
-  - B) accuracy, precision, recall, F1 are computed per held-out subject, then
-    averaged across folds (reported mean ± SEM). A subject with no scored REM is
-    skipped, since REM precision/recall are undefined there.
-  - A) the confusion matrix is row-normalized over ALL pooled epochs (the paper
-    normalizes A across rows but only averages B across folds). Rows are
-    Wake/NREM vs REM; its [REM, REM] cell is therefore close to, but not exactly,
-    the averaged recall.
+Each run writes results/<model-hash>.{py,json,png}, keyed by a hash of module.py:
+the .py is the exact model, the .json the numbers, the .png the figure. Weco logs
+the metric and the code itself; these are extra.
 
-Each run saves results/<model-hash>.{py,json,png}, keyed by a hash of module.py:
-the .py is the exact model (so the hash is identifiable), the .json the numbers,
-the .png the figure. Every variant Weco explores keeps its own record. (Weco
-itself logs only the scalar metric and the code; these artifacts are extra.)
-
-REAL-TIME HONESTY. Every fold is checked for prefix-invariance — the first-k
-predictions must be unchanged when later epochs are removed or altered. Any
-look-ahead fails the check and scores 0. See module.py for the rule.
-
-THIS FILE IS NOT OPTIMIZED BY WECO.
+Before scoring, each fold is checked for look-ahead (the real-time constraint in
+module.py): if the first-k predictions change when later epochs are removed or
+altered, the model is reading the future and scores 0.
 """
 from __future__ import annotations
 
@@ -42,7 +33,7 @@ import splits
 from module import build_model
 
 REM_LABEL = 1
-_CUT_FRACTIONS = (0.25, 0.5, 0.75)   # where to "stop the tape" within each night
+_CUT_FRACTIONS = (0.25, 0.5, 0.75)   # points in the night where look-ahead is checked
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 _LABELS = ["Wake/NREM", "REM"]
 

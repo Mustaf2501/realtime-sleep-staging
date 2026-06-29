@@ -1,7 +1,7 @@
-"""Readable proof that the fit contract passes per-night `groups` correctly.
+"""Tests that the fit contract passes per-night `groups` correctly.
 
-A model whose fit declares `groups` (a sequence model) must receive them; a plain
-tabular fit(X, y) must keep working untouched.
+A model whose fit declares `groups` (a sequence model) should receive them; a plain
+tabular fit(X, y) should keep working untouched.
 
     uv run --extra test python -m pytest tests/test_fit_contract.py -v
 """

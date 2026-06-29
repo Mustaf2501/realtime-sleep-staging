@@ -1,22 +1,20 @@
-"""Fixed feature extraction  —  NOT optimized by Weco.
+"""Feature extraction, following the paper (Mallela & Mallett, 2024).
 
-Turns one subject-night into a causal per-epoch feature matrix, following the
-paper (Mallela & Mallett, 2024) as closely as the real-time constraint allows.
-Three features per 30 s epoch, each using only samples at or before the epoch end:
+Turns one subject-night into a causal per-epoch feature matrix. Three features per
+30 s epoch, each using only samples at or before the epoch end:
 
-  0: heart rate — mean bpm in the epoch, EMA-smoothed, cubed, /1000
-  1: motion — ActiGraph activity counts (agcounts; Neishabouri 2022): the
+  0: heart rate, mean bpm in the epoch, EMA-smoothed, cubed, /1000
+  1: motion, ActiGraph activity counts (agcounts; Neishabouri 2022): the
      accelerometer is resampled to 30 Hz, turned into per-second count magnitudes,
      summed within the epoch, squared, then EMA-smoothed
   2: time-of-night in hours
 
-Library-backed: agcounts for the counts, pandas for the EMA and gap-fill.
+The counts come from agcounts; the EMA and gap-fill from pandas.
 
-Two places we can't match the paper exactly: the EMA smoothing constants are not
-stated (we use 0.30), and the paper's final "normalize the EMA" is omitted on
-purpose — a whole-recording normalization would peek at the future (non-causal),
-and scaling belongs to the model anyway (tree models ignore it; scale-sensitive
-models can add a train-fit scaler in module.py).
+Two things the paper does not pin down. The EMA smoothing constants aren't stated
+(0.30 here). The paper's final "normalize the EMA" is left out: a whole-recording
+normalization would use the future, and scaling is the model's job anyway (trees
+ignore it; a scale-sensitive model can fit a scaler on the training split).
 """
 from __future__ import annotations
 

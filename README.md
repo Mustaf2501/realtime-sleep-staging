@@ -1,51 +1,47 @@
-# Real-time sleep staging — Weco optimization harness
+# Real-time sleep staging
 
-Optimize a **real-time REM-detection** architecture for targeted lucidity
-reactivation, using the Walch et al. (2019) Apple Watch dataset (heart rate +
-motion + time-of-night → REM vs. not-REM), as in Mallela & Mallett (2024).
+A harness for optimizing a real-time REM detector with [Weco](https://www.weco.ai/),
+using the Walch et al. (2019) Apple Watch dataset (heart rate, motion, and
+time-of-night, to REM vs. not-REM), following Mallela & Mallett (2024).
 
-Weco rewrites `module.py` to maximize **REM F1** under **leave-one-subject-out**
-cross-validation, while every change stays **causal** (deployable in the live app).
+Weco rewrites `module.py` to raise the REM F1 under leave-one-subject-out
+cross-validation. Each candidate model has to stay causal, so it can run live on
+the watch rather than reading the whole night after the fact.
 
 ## Layout
 
 | File | Role | Weco edits? |
 |------|------|-------------|
-| `module.py`  | **the model only** — classifier + REM threshold | **yes** |
-| `features.py`| fixed, trusted feature extraction (HR, activity counts, time) | no |
-| `evaluate.py`| scores via leave-one-subject-out CV, prints `metric: N` | no |
-| `splits.py`  | builds the fixed feature matrix + LOSO cross-validator | no |
-| `dataset.py` | loads the Walch recordings (parsed once, cached as `.npz`) | no |
-| `data/`      | raw recordings — local only, never edited (see `data/README.md`) | no |
-| `.runs/`     | Weco logs, created when you pass `--save-logs` | no |
+| `module.py`   | the model: classifier plus REM threshold | yes |
+| `features.py` | feature extraction (heart rate, activity counts, time) | no |
+| `splits.py`   | builds the feature matrix and the LOSO splitter | no |
+| `evaluate.py` | scores via LOSO, prints `metric: N`, saves results | no |
+| `dataset.py`  | loads the Walch recordings (parsed once, cached) | no |
+| `data/`       | recordings and the committed feature matrix (see `data/README.md`) | no |
+| `results/`    | per-model confusion matrix and metrics | no |
 
-The contract `module.py` must keep: `build_model() -> a scikit-learn-compatible
-estimator` (`fit(X, y)` on feature rows, `predict(X) -> 1` for REM). Features are
-**fixed** in `features.py` and out of Weco's reach; Weco optimizes only the model
-(any sklearn-compatible classifier — RF, gradient boosting, SVM, MLP, or an
-sklearn-wrapped torch/keras model). Because the features are causal and the model
-scores each epoch independently, results stay real-time-honest; `evaluate.py`
-**enforces** this by checking the model's predictions for early epochs don't
-change when later epochs are removed, and scores 0 otherwise.
+`module.py` must provide `build_model()`, returning a scikit-learn estimator with
+`fit(X, y)` and `predict(X)` (1 for REM). The features are in `features.py` and
+Weco does not change them; it optimizes only the model. `evaluate.py` checks each
+fold for look-ahead and scores 0 if a model's earlier predictions change when
+later epochs are removed.
 
 ### Design
 
-The code follows *A Philosophy of Software Design* (Ousterhout): a few **deep
-modules** with simple interfaces hiding the complexity. `dataset` hides file
-parsing and caching; `features` hides the (fixed) feature engineering; `module`
-exposes just the model; `splits` owns the leave-one-subject-out dataset + folds.
-Splitting and scoring are delegated to trusted libraries
-(`sklearn.model_selection`, `sklearn.metrics`) rather than hand-rolled.
+The modules keep simple interfaces over the detail: `dataset` handles file parsing
+and caching, `features` the feature extraction, `module` the model, and `splits`
+the dataset and folds. Splitting and scoring use `sklearn.model_selection` and
+`sklearn.metrics` rather than hand-written code.
 
-### Exploring models
+### Models Weco can try
 
-Weco optimizes the classifier in `module.py` over the fixed feature matrix — a
-random forest, gradient boosting (XGBoost/LightGBM), SVM, an MLP, or an
-sklearn-wrapped torch/keras model. The base env already includes scikit-learn,
-PyTorch, XGBoost, LightGBM, and TensorFlow/Keras; keep `predict(X)` per-epoch and
-deterministic so the causality check stays green. Feature extraction is fixed in
-`features.py` (deep raw-signal models are out of scope by design — change
-`features.py` yourself if you want to revisit that).
+Any scikit-learn-compatible classifier over the feature matrix: random forest,
+gradient boosting (XGBoost or LightGBM), SVM, an MLP, or a torch/keras model
+wrapped as an estimator. A model that needs temporal context can declare
+`fit(X, y, groups)` and process each night causally. The environment already
+includes scikit-learn, PyTorch, XGBoost, LightGBM, and TensorFlow/Keras. Deep
+models over the raw signals are out of scope while features are fixed; edit
+`features.py` to change that.
 
 ## Setup
 
@@ -55,20 +51,21 @@ Dependencies are managed with [uv](https://docs.astral.sh/uv/):
 uv sync
 ```
 
-Add the dataset to `data/` (see `data/README.md`) — it is required; `evaluate.py`
-raises if `data/` is empty.
+The repo ships `data/featurematrix.npz`, so the search runs without the raw
+recordings. To rebuild the features from scratch, install the dataset (see
+`data/README.md`) and run `evaluate.py`; a change to `features.py` triggers a
+rebuild.
 
-## Establish the baseline
+## Baseline
 
 ```bash
 uv run python evaluate.py
 ```
 
-This runs leave-one-subject-out CV and prints `metric: <REM F1>` plus a
-per-class breakdown (recall, precision). Commit `module.py` before each
-optimization run.
+Prints the metric and the per-subject accuracy, precision, recall, and F1, and
+writes `results/<model-hash>.{py,json,png}`.
 
-## Optimize with Weco
+## Run Weco
 
 ```bash
 weco run \

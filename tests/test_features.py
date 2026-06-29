@@ -1,11 +1,11 @@
-"""Readable correctness tests for the fixed feature extraction (features.py).
+"""Tests for the feature extraction in features.py.
 
 Each test builds a small, controlled input so the expected output is obvious by
 inspection. Run with:
 
     uv run --extra test python -m pytest tests/ -v
 
-What these confirm:
+They cover:
   - the feature matrix has the right shape and never contains NaN
   - heart rate is bucketed into (t-30, t] windows and gaps are forward-filled
   - the EMA smoothing matches a hand-computed result

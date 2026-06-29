@@ -1,8 +1,7 @@
-"""Readable proof that the real-time causality guard works (evaluate.py).
+"""Tests for the causality guard in evaluate.py.
 
-The guard `_predictions_are_causal` must:
-  - PASS a model that scores each epoch from its own row only (real-time-safe)
-  - FAIL a model that reads a later epoch to decide the current one (cheating)
+`_predictions_are_causal` should pass a model that scores each epoch from its own
+row and fail one that reads a later epoch to decide the current one.
 
     uv run --extra test python -m pytest tests/test_causality_guard.py -v
 """

@@ -14,8 +14,7 @@ before scoring began):
 Raw PSG stage codes (-1 unscored, 0 Wake, 1 N1, 2 N2, 3 N3, 4 legacy->N3, 5 REM)
 are mapped to the canonical codes below, with REM as the positive class.
 
-THIS FILE IS NOT OPTIMIZED BY WECO. It loads data into a stable structure; the
-model and feature logic live in module.py.
+This module only loads data; the model and feature logic live elsewhere.
 """
 from __future__ import annotations
 

@@ -1,70 +1,31 @@
-"""REM-detection model  —  THIS FILE IS OPTIMIZED BY WECO.
+"""The REM-detection model (Weco rewrites this file).
 
-Goal: classify each 30 s epoch as REM / not-REM for targeted lucidity
-reactivation. Features are fixed and causal in features.py and cannot be changed
-here; Weco optimizes only the model that maps the per-epoch feature matrix to a
-REM / not-REM decision (any scikit-learn-compatible classifier — random forest,
-gradient boosting, SVM, MLP, or an sklearn-wrapped torch/keras model).
+Each 30 s epoch is classified REM / not-REM from the feature matrix built in
+features.py. build_model returns a scikit-learn-compatible estimator:
 
-================================  CONTRACT  ================================
-    build_model() -> a scikit-learn-compatible estimator
-        fit(X, y)            trains on stacked per-epoch feature rows (y: 1 == REM)
-        predict(X)           -> 1 for predicted-REM epochs, one label per row
+    fit(X, y)            X = per-epoch feature rows, y = 1 for REM
+    predict(X)           1 for predicted-REM epochs, one label per row
 
-    The training rows are many subjects' nights concatenated. A model that needs
-    per-night boundaries (a sequence model resetting state between nights) may
-    instead declare:
-        fit(X, y, groups)    groups[i] = subject index of row i (contiguous per
-                             night); the harness passes it automatically when the
-                             signature has `groups`. Tabular models just use (X, y).
+Training rows are many subjects' nights concatenated. A model that needs per-night
+boundaries (a sequence model that resets state between nights) can instead declare
+fit(X, y, groups), where groups[i] is the subject index of row i; the harness
+passes it when the signature asks for it. predict always gets one subject's night
+in chronological order.
 
-    predict(X) always receives ONE held-out subject's epochs in chronological
-    order, so a causal model can process them as a single stream.
+Real-time constraint. The detector runs live on a watch, so the prediction for the
+epoch ending at t may use only data up to t. predict must score each epoch from
+that row and earlier ones. That rules out reading later epochs (bidirectional
+nets, attention over the whole night), post-hoc smoothing with future predictions,
+whole-sequence normalization, and tuning on the held-out subject. evaluate.py
+checks this each fold and scores 0 on a violation; the features are already causal
+and the threshold is set at train time.
 
-The harness (evaluate.py) cross-validates it leave-one-subject-out and reports the
-mean per-subject REM F1.
-===========================================================================
+Deployment. The chosen model runs on a phone (Flutter), one epoch at a time, so a
+small model that exports to TFLite or ONNX is preferable. evaluate.py measures only
+F1 and causality, not size or latency, so treat this as a guideline.
 
-----------------------------  REAL-TIME RULE  -----------------------------
-This model is meant to run live on a wrist device: at the end of the epoch ending
-at time t it must emit that epoch's decision immediately, from data already seen.
-
-    The prediction for the epoch ending at t may depend ONLY on information with
-    timestamp <= t. Nothing from a later epoch may influence an earlier
-    prediction. Concretely, predict() must score each epoch from that row and
-    earlier rows only (a unidirectional / streaming computation).
-
-"Cheating" means breaking that rule by letting the future leak in, e.g.:
-  - reading later rows to label the current one (bidirectional RNN/Transformer,
-    attention over the whole night);
-  - post-hoc smoothing of the prediction sequence with future predictions
-    (median filter, full-night Viterbi, "relabel if surrounded by REM");
-  - normalizing features by whole-sequence statistics (mean/std/min/max computed
-    over all epochs, including future ones);
-  - tuning the threshold or any parameter on the held-out subject's data.
-
-evaluate.py ENFORCES this: every fold is checked for prefix-invariance — the
-first-k predictions must be unchanged when later epochs are removed or altered.
-Any look-ahead scores metric = 0. (Feature-level look-ahead is already impossible:
-features.py is fixed and causal, and the threshold is fixed at train time.)
----------------------------------------------------------------------------
-
---------------------------  DEPLOYMENT (mobile)  --------------------------
-The winning model ships in a Flutter phone app and runs on-device, one epoch at a
-time, so prefer models that are:
-  - small and low-latency (per-epoch inference is tiny compute);
-  - exportable to a mobile runtime — TFLite / ONNX (sklearn trees convert via
-    skl2onnx; torch/keras via their exporters) — avoid exotic/unsupported ops;
-  - deterministic at inference (eval mode, no dropout) so the causality check is
-    stable and on-device output is reproducible.
-These are guidance, not gates: evaluate.py scores only REM F1 + causality, so it
-will not by itself penalize a large or un-exportable model — keep them in mind
-(or steer Weco with `-i`) when choosing a winner to deploy.
----------------------------------------------------------------------------
-
-Free to change: the estimator, its hyperparameters, hyperparameter tuning methods, the REM probability
-threshold, class weighting, calibration — anything about the model, as long as
-the contract and the real-time rule hold.
+Anything about the model is open: the estimator, its hyperparameters and tuning,
+the REM threshold, class weighting, calibration.
 """
 from __future__ import annotations
 

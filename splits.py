@@ -1,22 +1,17 @@
-"""Leave-one-subject-out evaluation protocol.
+"""The leave-one-subject-out evaluation dataset and splitter.
 
-Sleep epochs from one subject are highly correlated, so an honest score requires
-keeping each subject entirely in train OR test. The paper does exactly this with
-leave-one-participant-out cross-validation, and so do we — using scikit-learn's
-LeaveOneGroupOut (subject = group). It is deterministic: every subject is the
-test set exactly once, so there is no seed.
+Epochs from one subject are highly correlated, so a subject is kept entirely in
+train or test. This is the paper's leave-one-participant-out scheme, using
+scikit-learn's LeaveOneGroupOut with subject as the group. It is deterministic:
+each subject is held out once, so there is no seed.
 
-THIS FILE IS NOT OPTIMIZED BY WECO. It fixes the protocol so scores stay
-comparable across optimization steps, and is the single source of truth for the
-evaluation dataset: feature rows, labels, and groups are built together so they
-can never drift out of alignment. Features come from the fixed features.py.
+make_dataset builds (X, y, groups) together so the rows stay aligned; the features
+come from features.py.
 
-The feature matrix is built once and saved to data/featurematrix.npz. Because the
-features are fixed, that file is identical on every Weco step — and small enough
-to COMMIT. Ship it with the repo and the search runs on another machine WITHOUT
-the 1.7 GB of raw recordings: the model only ever needs (X, y, groups). The file
-stores a hash of features.py; if features.py changes, the matrix is rebuilt from
-./data (which must then be present).
+The feature matrix is saved to data/featurematrix.npz. It is the same on every
+Weco step (the features are fixed) and small enough to commit, so the search can
+run on another machine from the file alone, without the raw recordings. The file
+stores a hash of features.py; if features.py changes it is rebuilt from ./data.
 """
 from __future__ import annotations
 

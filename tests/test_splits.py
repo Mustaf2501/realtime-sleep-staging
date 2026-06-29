@@ -1,11 +1,11 @@
-"""Readable correctness tests for the evaluation protocol (splits.py).
+"""Tests for the evaluation protocol in splits.py.
 
 Each test builds a couple of tiny subject-nights with a known stage layout, so the
 expected (X, y, groups) and the leave-one-subject-out folds can be checked by hand.
 
     uv run --extra test python -m pytest tests/test_splits.py -v
 
-What these confirm:
+They cover:
   - make_dataset stacks one row per *scored* epoch (unscored -1 epochs dropped)
   - y is 1 exactly on REM epochs, groups carry the subject index
   - X rows are the fixed features of the scored epochs
