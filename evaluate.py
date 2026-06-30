@@ -25,6 +25,7 @@ import hashlib
 import inspect
 import json
 import os
+import signal
 
 import numpy as np
 from sklearn.metrics import (accuracy_score, confusion_matrix, fbeta_score,
@@ -38,6 +39,19 @@ BETA = 0.3                           # F-beta < 1 weights precision over recall
 _CUT_FRACTIONS = (0.25, 0.5, 0.75)   # points in the night where look-ahead is checked
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 _LABELS = ["Wake/NREM", "REM"]
+EVAL_TIMEOUT_S = 600                 # a candidate that takes longer scores 0 (keeps the search moving)
+
+
+def _start_watchdog() -> None:
+    """Score 0 and exit if the eval runs too long, so a slow/hung candidate never
+    stalls the search. (Best-effort: fires between Python operations; a pure
+    C-level hang may not be interruptible.)"""
+    def _on_timeout(signum, frame):
+        print("metric: 0.0")
+        print(f"EVAL TIMEOUT: exceeded {EVAL_TIMEOUT_S}s; candidate too slow.")
+        os._exit(0)
+    signal.signal(signal.SIGALRM, _on_timeout)
+    signal.alarm(EVAL_TIMEOUT_S)
 
 
 def _fit(model, X: np.ndarray, y: np.ndarray, groups: np.ndarray):
@@ -76,6 +90,7 @@ def _mean_sem(values: list[float]) -> tuple[float, float]:
 
 
 def main() -> float:
+    _start_watchdog()                # cap eval wall-clock so no candidate stalls the run
     # features (X): (n_epochs, n_features) | labels (y): (n_epochs,), 1 == REM
     # subjects (groups): (n_epochs,)   -- from the committed matrix when present
     X, y, groups = splits.load_dataset()
