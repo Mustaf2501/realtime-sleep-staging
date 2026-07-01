@@ -7,7 +7,7 @@ expected (X, y, groups) and the leave-one-subject-out folds can be checked by ha
 
 They cover:
   - make_dataset stacks one row per *scored* epoch (unscored -1 epochs dropped)
-  - y is 1 exactly on REM epochs, groups carry the subject index
+  - y is the canonical stage code 0..4 (REM == 4), groups carry the subject index
   - X rows are the fixed features of the scored epochs
   - the cross-validator is true leave-one-subject-out: one fold per subject,
     train/test never share a subject, every epoch is tested exactly once
@@ -43,14 +43,14 @@ def make_record(subject_id: str, stages: list[int]) -> Record:
 # make_dataset
 # --------------------------------------------------------------------------- #
 def test_make_dataset_stacks_labels_and_groups():
-    # s0: [Wake, REM, unscored, REM]  -> scored epochs 0,1,3 -> y = [0, 1, 1]
-    # s1: [N2,   REM, Wake]           -> all scored          -> y = [0, 1, 0]
+    # s0: [Wake, REM, unscored, REM]  -> scored epochs 0,1,3 -> y = [WAKE, REM, REM]
+    # s1: [N2,   REM, Wake]           -> all scored          -> y = [N2, REM, WAKE]
     records = [make_record("s0", [WAKE, REM, UNSCORED, REM]),
                make_record("s1", [N2, REM, WAKE])]
     X, y, groups = splits.make_dataset(records)
 
     assert X.shape == (6, len(features.FEATURE_NAMES))         # 6 scored epochs, one col per feature
-    assert np.array_equal(y, [0, 1, 1, 0, 1, 0])              # 1 exactly on REM
+    assert np.array_equal(y, [WAKE, REM, REM, N2, REM, WAKE])  # canonical stage code, not binary
     assert np.array_equal(groups, [0, 0, 0, 1, 1, 1])        # subject index per row
 
 
@@ -59,7 +59,7 @@ def test_make_dataset_drops_unscored_epochs():
     records = [make_record("s", [WAKE, UNSCORED, REM, UNSCORED, N2])]
     X, y, groups = splits.make_dataset(records)
     assert X.shape[0] == 3
-    assert np.array_equal(y, [0, 1, 0])                       # Wake, REM, N2
+    assert np.array_equal(y, [WAKE, REM, N2])                 # canonical stage codes
 
 
 def test_make_dataset_rows_are_features_of_scored_epochs():

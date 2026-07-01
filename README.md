@@ -17,7 +17,8 @@ live on the watch rather than reading the whole night after the fact.
 | `module.py`   | the model: classifier plus REM threshold | yes |
 | `features.py` | feature extraction (HR, activity, time + causal temporal features) | no |
 | `splits.py`   | builds the feature matrix and the LOSO splitter | no |
-| `evaluate.py` | scores via LOSO, prints `metric: N`, saves results | no |
+| `evaluate.py` | scores via LOSO, prints `metric: N` | no |
+| `results.py`  | writes per-model metrics, confusion, and figure to `results/` | no |
 | `dataset.py`  | loads the Walch recordings (parsed once, cached) | no |
 | `data/`       | recordings and the committed feature matrix (see `data/README.md`) | no |
 | `results/`    | per-model confusion matrix and metrics | no |

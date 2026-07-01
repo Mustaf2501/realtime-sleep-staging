@@ -21,24 +21,24 @@ altered, the model is reading the future and scores 0.
 """
 from __future__ import annotations
 
-import hashlib
 import inspect
-import json
 import os
 import signal
 
 import numpy as np
-from sklearn.metrics import (accuracy_score, confusion_matrix, fbeta_score,
+from sklearn.metrics import (accuracy_score, classification_report, fbeta_score,
                              precision_score, recall_score)
 
+import results
 import splits
+from dataset import N1, N2, N3, REM, WAKE
 from module import build_model
 
-REM_LABEL = 1
+STAGES = [WAKE, N1, N2, N3, REM]     # canonical class order for the confusion / report
+REM_LABEL = REM                      # the one class the metric is about (multiclass now)
 BETA = 0.3                           # F-beta < 1 weights precision over recall
 _CUT_FRACTIONS = (0.25, 0.5, 0.75)   # points in the night where look-ahead is checked
-RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
-_LABELS = ["Wake/NREM", "REM"]
+_LABELS = ["Wake", "N1", "N2", "N3", "REM"]
 EVAL_TIMEOUT_S = 600                 # a candidate that takes longer scores 0 (keeps the search moving)
 
 
@@ -91,7 +91,7 @@ def _mean_sem(values: list[float]) -> tuple[float, float]:
 
 def main() -> float:
     _start_watchdog()                # cap eval wall-clock so no candidate stalls the run
-    # features (X): (n_epochs, n_features) | labels (y): (n_epochs,), 1 == REM
+    # features (X): (n_epochs, n_features) | labels (y): (n_epochs,), stage 0..4 (4 == REM)
     # subjects (groups): (n_epochs,)   -- from the committed matrix when present
     X, y, groups = splits.load_dataset()
 
@@ -117,96 +117,43 @@ def main() -> float:
             skipped += 1
             continue
 
-        per_fold["accuracy"].append(accuracy_score(y_test, y_pred))
-        per_fold["precision"].append(
-            precision_score(y_test, y_pred, pos_label=REM_LABEL, zero_division=0))
-        per_fold["recall"].append(
-            recall_score(y_test, y_pred, pos_label=REM_LABEL, zero_division=0))
-        per_fold["fbeta"].append(
-            fbeta_score(y_test, y_pred, beta=BETA, pos_label=REM_LABEL, zero_division=0))
+        # REM is one class among five; score it one-vs-rest via labels=[REM].
+        per_fold["accuracy"].append(accuracy_score(y_test, y_pred))   # overall, all 5 stages
+        per_fold["precision"].append(precision_score(
+            y_test, y_pred, labels=[REM_LABEL], average="macro", zero_division=0))
+        per_fold["recall"].append(recall_score(
+            y_test, y_pred, labels=[REM_LABEL], average="macro", zero_division=0))
+        per_fold["fbeta"].append(fbeta_score(
+            y_test, y_pred, beta=BETA, labels=[REM_LABEL], average="macro", zero_division=0))
 
+    pooled_true_all = np.concatenate(pooled_true)   # every epoch, every subject
+    pooled_pred_all = np.concatenate(pooled_pred)
     stats = {name: _mean_sem(vals) for name, vals in per_fold.items()}
-    confusion = _row_normalized_confusion(          # pooled over all epochs (paper's A)
-        np.concatenate(pooled_true), np.concatenate(pooled_pred))
+    confusion = results.row_normalized_confusion(     # 5x5, pooled over all epochs
+        pooled_true_all, pooled_pred_all, STAGES)
+    per_class = classification_report(                # overall, per-stage (pooled)
+        pooled_true_all, pooled_pred_all, labels=STAGES, target_names=_LABELS,
+        output_dict=True, zero_division=0)
     n_subjects = len(per_fold["fbeta"])
 
     fbeta_mean = stats["fbeta"][0]
-    print(f"metric: {fbeta_mean:.4f}")
-    for name in ("fbeta", "accuracy", "precision", "recall"):
+    print(f"metric: {fbeta_mean:.4f}")               # REM F-beta -- what Weco maximizes
+    print("REM, per-subject mean +/- SEM:")
+    for name in ("fbeta", "precision", "recall"):
         mean, sem = stats[name]
-        print(f"{name}: {mean:.4f} +/- {sem:.4f} SEM")
+        print(f"  {name}: {mean:.4f} +/- {sem:.4f}")
+    acc_mean, acc_sem = stats["accuracy"]
     note = f" ({skipped} skipped: no scored REM)" if skipped else ""
-    print(f"(per-subject mean over {n_subjects} folds{note}; beta={BETA})")
+    print(f"overall accuracy: {acc_mean:.4f} +/- {acc_sem:.4f} SEM  "
+          f"(per-subject mean over {n_subjects} folds{note}; beta={BETA})")
+    print("per class, pooled over all epochs:")
+    for lbl in _LABELS:                              # so the other stages are visible too
+        r = per_class[lbl]
+        print(f"  {lbl:5s} precision {r['precision']:.3f}  recall {r['recall']:.3f}  "
+              f"f1 {r['f1-score']:.3f}  (n={int(r['support'])})")
 
-    _save_results(stats, confusion, n_subjects)
+    results.save(stats, confusion, per_class, n_subjects, _LABELS, BETA)
     return fbeta_mean
-
-
-def _row_normalized_confusion(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
-    cm = confusion_matrix(y_true, y_pred, labels=[0, REM_LABEL]).astype(float)
-    row_totals = cm.sum(axis=1, keepdims=True)
-    return np.divide(cm, row_totals, out=np.full_like(cm, np.nan), where=row_totals > 0)
-
-
-def _model_hash() -> str:
-    import module
-    return hashlib.sha256(open(module.__file__, "rb").read()).hexdigest()[:12]
-
-
-def _save_results(stats: dict, confusion: np.ndarray, n_subjects: int) -> None:
-    """Write results/<model-hash>.{json,png} — numbers always, figure too."""
-    import module
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    model_hash = _model_hash()
-    base = os.path.join(RESULTS_DIR, model_hash)
-
-    with open(base + ".py", "w") as f:          # the exact model — makes the hash identifiable
-        f.write(open(module.__file__).read())
-
-    with open(base + ".json", "w") as f:
-        json.dump({
-            "model_hash": model_hash,
-            "metric_mean_rem_fbeta": stats["fbeta"][0],
-            "beta": BETA,
-            "n_subjects": n_subjects,
-            "per_subject": {k: {"mean": m, "sem": s} for k, (m, s) in stats.items()},
-            "confusion_rownorm": confusion.tolist(),
-            "confusion_labels": _LABELS,
-            "confusion_method": "pooled, row-normalized over all epochs",
-        }, f, indent=2)
-
-    _save_figure(base + ".png", stats, confusion, model_hash)
-
-
-def _save_figure(path: str, stats: dict, confusion: np.ndarray, model_hash: str) -> None:
-    import matplotlib
-    matplotlib.use("Agg")   # headless: no display needed
-    import matplotlib.pyplot as plt
-
-    fig, (ax_cm, ax_bar) = plt.subplots(1, 2, figsize=(10, 4))
-
-    ax_cm.imshow(confusion, cmap="Blues", vmin=0, vmax=1)
-    ax_cm.set_xticks([0, 1], _LABELS)
-    ax_cm.set_yticks([0, 1], _LABELS)
-    for i in range(2):
-        for j in range(2):
-            ax_cm.text(j, i, f"{confusion[i, j]:.2f}", ha="center", va="center")
-    ax_cm.set_xlabel("Predicted sleep stage")
-    ax_cm.set_ylabel("True sleep stage")
-    ax_cm.set_title("Confusion (row-normalized, avg over folds)")
-
-    names = ["Accuracy", "Precision", "Recall"]
-    means = [stats["accuracy"][0], stats["precision"][0], stats["recall"][0]]
-    sems = [stats["accuracy"][1], stats["precision"][1], stats["recall"][1]]
-    ax_bar.bar(names, means, yerr=sems, capsize=4, color="0.8", edgecolor="black")
-    ax_bar.set_ylim(0, 1)
-    ax_bar.set_ylabel("Ratio")
-    ax_bar.set_title("Per-fold mean +/- SEM")
-
-    fig.suptitle(f"REM detection - model {model_hash}  (REM F{BETA} = {stats['fbeta'][0]:.3f})")
-    fig.tight_layout()
-    fig.savefig(path, dpi=120, bbox_inches="tight")
-    plt.close(fig)
 
 
 if __name__ == "__main__":

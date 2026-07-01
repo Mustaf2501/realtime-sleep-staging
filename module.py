@@ -1,10 +1,12 @@
 """The REM-detection model (Weco rewrites this file).
 
-Each 30 s epoch is classified REM / not-REM from the feature matrix built in
-features.py. build_model returns a scikit-learn-compatible estimator:
+Each 30 s epoch is classified into one of five sleep stages (Wake, N1, N2, N3, REM)
+from the feature matrix built in features.py. REM is the class of interest, but the
+model sees all five so it can separate REM from each non-REM stage instead of one
+collapsed "not-REM" blob. build_model returns a scikit-learn-compatible estimator:
 
-    fit(X, y)            X = per-epoch feature rows, y = 1 for REM
-    predict(X)           1 for predicted-REM epochs, one label per row
+    fit(X, y)            X = per-epoch feature rows, y = stage code 0..4 (4 == REM)
+    predict(X)           one predicted stage code per row (4 == REM)
 
 Training rows are many subjects' nights concatenated. A model that needs per-night
 boundaries (a sequence model that resets state between nights) can instead declare
@@ -22,7 +24,7 @@ and the threshold is set at train time.
 
 Deployment. The chosen model runs on a phone (Flutter), one epoch at a time, so a
 small model that exports to TFLite or ONNX is preferable. evaluate.py measures only
-F1 and causality, not size or latency, so treat this as a guideline.
+REM F-beta and causality, not size or latency, so treat this as a guideline.
 
 Anything about the model is open: the estimator, its hyperparameters and tuning,
 the REM threshold, class weighting, calibration.
@@ -32,30 +34,39 @@ from __future__ import annotations
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-REM_THRESHOLD = 0.24      # P(REM) >= threshold -> REM  (paper used 0.24)
+from dataset import REM
+
+REM_THRESHOLD = 0.24      # P(REM) >= threshold -> call REM  (paper used 0.24)
 RF_KWARGS = dict(n_estimators=200, min_samples_leaf=48, n_jobs=-1, random_state=0)
 
 
 class RemModel:
-    """Predicts REM by thresholding its own probabilities. Apply the threshold
-    here, in predict — do NOT wrap a model in sklearn's FixedThresholdClassifier:
-    that breaks on custom or groups-aware estimators. Keep this shape (fit /
-    predict / predict_proba, classes_ set, fit accepts groups) for any model,
-    including LSTMs and other custom estimators, and they compose cleanly."""
+    """Multiclass stage classifier with a REM bias. predict_proba gives per-stage
+    probabilities; predict returns the argmax stage, but overrides to REM whenever
+    P(REM) clears a threshold — so the REM precision/recall trade stays tunable even
+    though the model is multiclass. Apply the threshold here, in predict — do NOT
+    wrap a model in sklearn's FixedThresholdClassifier: that breaks on custom or
+    groups-aware estimators. Keep this shape (fit / predict / predict_proba, fit
+    accepts groups) for any estimator and they compose cleanly."""
 
     def __init__(self, threshold: float = REM_THRESHOLD):
         self.threshold = threshold
 
     def fit(self, X, y, groups=None):     # groups is optional; ignore it if unused
-        self.classes_ = np.array([0, 1])
         self.model_ = RandomForestClassifier(**RF_KWARGS).fit(X, y)
+        self.classes_ = self.model_.classes_
         return self
 
     def predict_proba(self, X):
         return self.model_.predict_proba(X)
 
     def predict(self, X):
-        return (self.model_.predict_proba(X)[:, 1] >= self.threshold).astype(int)
+        proba = self.model_.predict_proba(X)
+        pred = self.classes_[np.argmax(proba, axis=1)]
+        rem_col = np.flatnonzero(self.classes_ == REM)
+        if rem_col.size:                                   # bias toward REM when it clears the threshold
+            pred[proba[:, rem_col[0]] >= self.threshold] = REM
+        return pred
 
 
 def build_model():

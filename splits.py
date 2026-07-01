@@ -48,7 +48,9 @@ def make_dataset(records: list[Record]) -> tuple[np.ndarray, np.ndarray, np.ndar
     """Stack all scored epochs into (X, y, groups) for grouped cross-validation.
 
     X      : (n_epochs, n_features) fixed causal features
-    y      : (n_epochs,) int labels, 1 == REM
+    y      : (n_epochs,) canonical stage code 0..4 (Wake, N1, N2, N3, REM); REM is
+             the class of interest but the model sees all five, so it can tell REM
+             apart from each non-REM stage rather than one collapsed "not-REM" blob
     groups : (n_epochs,) subject index, so LeaveOneGroupOut holds one out
 
     Pure (always recomputes); load_dataset() is the cached/committable entry point.
@@ -57,7 +59,7 @@ def make_dataset(records: list[Record]) -> tuple[np.ndarray, np.ndarray, np.ndar
     for subject_index, record in enumerate(records):
         scored = record.scored_mask
         X_parts.append(features.featurize(record)[scored])
-        y_parts.append((record.stage[scored] == REM).astype(int))
+        y_parts.append(record.stage[scored].astype(int))     # multiclass stage code 0..4
         group_parts.append(np.full(int(scored.sum()), subject_index))
     return np.vstack(X_parts), np.concatenate(y_parts), np.concatenate(group_parts)
 
@@ -82,6 +84,6 @@ def _save(X: np.ndarray, y: np.ndarray, groups: np.ndarray, features_hash: str) 
 if __name__ == "__main__":
     X, y, groups = load_dataset()
     print(f"{X.shape[0]} epochs x {X.shape[1]} features, {len(np.unique(groups))} subjects")
-    print(f"REM prevalence: {100 * y.mean():.1f}% | LOSO folds: "
+    print(f"REM prevalence: {100 * (y == REM).mean():.1f}% | LOSO folds: "
           f"{cross_validator().get_n_splits(groups=groups)}")
     print(f"saved: {DATASET_FILE} ({os.path.getsize(DATASET_FILE) / 1024:.0f} KB)")
